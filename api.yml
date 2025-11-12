@@ -1,0 +1,308 @@
+openapi: 3.0.3
+info:
+  title: Hoop API
+  version: "1.0"
+servers:
+  - url: https://api.hoop.health/v1
+x-guidelines:
+  versioning: uri
+  idempotency: header: Idempotency-Key
+  multitenancy: header: X-Tenant-Id
+  envelope: true
+  pagination: cursor
+  auth: bearer_jwt_with_scopes
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  headers:
+    X-Request-Id: { description: Correlation ID, schema: { type: string } }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            field: { type: string, nullable: true }
+    Job:
+      type: object
+      properties:
+        job_id: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        result_ref: { type: string, nullable: true }
+
+security:
+  - bearerAuth: []
+
+paths:
+  /inquiries:
+    post:
+      summary: Create a lead/inquiry
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Created } }
+
+  /clients:
+    post:
+      summary: Upsert client (provisional or full)
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Upserted } }
+
+  /intake/forms:
+    post:
+      summary: Submit intake form (raw) → server parses/maps
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses:
+        "202":
+          description: Accepted (Job)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+
+  /consents:
+    post:
+      summary: Store signed consent flags/artifact
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Stored } }
+
+  /insurance/verify:
+    post:
+      summary: Verify eligibility (mock in MVP)
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses:
+        "202":
+          description: Job queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+
+  /matching/assign:
+    post:
+      summary: Assign therapist to client (rule-based)
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Assigned } }
+
+  /sessions:
+    get:
+      summary: List sessions
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: query; name: cursor; schema: { type: string }
+        - in: query; name: limit; schema: { type: integer, default: 50 }
+        - in: query; name: filter[status]; schema: { type: string }
+        - in: query; name: sort; schema: { type: string, example: "-start_at" }
+      responses: { "200": { description: OK } }
+    post:
+      summary: Create session (follow-ups too)
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Created } }
+
+  /sessions/{id}:brief:
+    post:
+      summary: Generate pre-session brief (AI) → Job
+      parameters:
+        - in: path; name: id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses:
+        "202": { description: Job queued, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
+
+  /sessions/{id}:start:
+    post:
+      summary: Mark session started; optionally enable live assist
+      parameters:
+        - in: path; name: id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                live_assist: { type: boolean, default: false }
+                consent: { type: boolean, default: false }
+      responses:
+        "200":
+          description: OK (may include RT connection hints)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  live_assist: { type: boolean }
+                  rt:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      ws_audio_url: { type: string }
+                      ws_control_url: { type: string }
+                      sse_stream_url: { type: string }
+
+  /sessions/{id}:stop:
+    post:
+      summary: Stop session / end live assist
+      parameters:
+        - in: path; name: id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "200": { description: OK } }
+
+  /sessions/{id}/notes:
+    post:
+      summary: Append notes or RT transcript segments
+      parameters:
+        - in: path; name: id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    mode: { type: string, enum: ["append"] }
+                    text: { type: string }
+                - type: object
+                  properties:
+                    mode: { type: string, enum: ["append"] }
+                    text: { type: string }
+                    ts_ms: { type: integer }
+                    segment_id: { type: string }
+                    final: { type: boolean }
+      responses: { "202": { description: Accepted } }
+
+  /sessions/{id}:complete:
+    post:
+      summary: Mark completed; emits session.completed
+      parameters:
+        - in: path; name: id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "200": { description: OK } }
+
+  /sessions/{id}:summarize:
+    post:
+      summary: Generate SOAP summary (AI) → Job
+      parameters:
+        - in: path; name: id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses:
+        "202": { description: Job queued, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
+
+  /goals:
+    post:
+      summary: Upsert SMART goals/tasks
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Created } }
+
+  /billing/invoices:
+    post:
+      summary: Create draft invoice
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Draft created } }
+
+  /billing/webhooks/stripe:
+    post:
+      summary: Receive payment webhook (signed)
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses: { "200": { description: OK } }
+
+  /notifications/send:
+    post:
+      summary: Send email/SMS (supports schedules)
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "202": { description: Accepted } }
+
+  /treatment/terminate:
+    post:
+      summary: Close episode; create discharge plan
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Terminated } }
+
+  /clients/{id}/progress:
+    get:
+      summary: Outcomes/engagement snapshot
+      parameters:
+        - in: path; name: id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses: { "200": { description: OK } }
+
+  /jobs/{job_id}:
+    get:
+      summary: Get job status/result
+      parameters:
+        - in: path; name: job_id; required: true; schema: { type: string }
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses:
+        "200": { description: Job status, content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } } }
+
+  /webhooks/endpoints:
+    post:
+      summary: Register a webhook endpoint (signed deliveries)
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Created } }
+
+  # ── Real-time namespace (WebRTC/WS/SSE) ─────────────────────────────
+  /rt/tokens:
+    post:
+      summary: Mint short-lived token for RT sockets
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+        - in: header; name: Idempotency-Key; schema: { type: string }
+      responses: { "201": { description: Created } }
+
+  /rt/offer:
+    post:
+      summary: WebRTC SDP offer → answer
+      x-protocol: webrtc
+      parameters:
+        - in: header; name: X-Tenant-Id; required: true; schema: { type: string }
+      responses: { "200": { description: Answer returned } }
+
+  /rt/connect:
+    get:
+      summary: Control channel (WebSocket)
+      x-protocol: websocket
+      parameters:
+        - in: query; name: session_id; required: true; schema: { type: string }
+      responses: { "101": { description: Switching Protocols } }
+
+  /rt/audio:
+    get:
+      summary: Audio uplink (WebSocket PCM/Opus)
+      x-protocol: websocket
+      parameters:
+        - in: query; name: session_id; required: true; schema: { type: string }
+      responses: { "101": { description: Switching Protocols } }
+
+  /rt/stream:
+    get:
+      summary: Downstream events (SSE): transcript & suggestions
+      x-protocol: sse
+      parameters:
+        - in: query; name: session_id; required: true; schema: { type: string }
+      responses: { "200": { description: Event stream } }

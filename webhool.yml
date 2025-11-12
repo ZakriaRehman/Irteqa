@@ -1,0 +1,116 @@
+name: hoop_end_to_end
+version: 1.1
+defaults:
+  headers: { X-Tenant-Id: "{{tenant_id}}" }
+  retry: { policy: exponential, attempts: 5, backoff_seconds: [10,60,180,600,1800] }
+  idempotency_key: "{{event.event_id}}"
+
+on: inquiry.submitted
+actions:
+  - name: send_welcome_email
+    call: POST /v1/notifications/send
+    body: { to: "{{lead.email}}", channel: email, template: welcome_intake_link }
+  - name: create_provisional_client
+    call: POST /v1/clients
+    body: { status: onboarding, name: "{{lead.name}}", email: "{{lead.email}}", concerns: "{{lead.concerns}}" }
+
+on: intake.form_submitted
+actions:
+  - name: parse_intake_form
+    call: POST /v1/intake/forms
+    body: { client_id: "{{client.id}}", raw_form: "{{form_raw}}" }
+    job: true
+  - name: verify_insurance_mock
+    call: POST /v1/insurance/verify
+    body: { client_id: "{{client.id}}", provider: "{{form.insurance_provider}}", member_id: "{{form.member_id}}" }
+    job: true
+  - name: request_consent_signature
+    call: POST /v1/consents
+    body: { client_id: "{{client.id}}", consent_signed: "{{form.consent_signed}}", artifact_url: "{{form.consent_pdf_url}}" }
+
+on: consent.signed
+actions:
+  - name: assign_therapist
+    call: POST /v1/matching/assign
+    body: { client_id: "{{client.id}}", strategy: rules_v1 }
+    save: { assignment.therapist_id: "{{resp.therapist_id}}" }
+  - name: schedule_first_session
+    call: POST /v1/sessions
+    body: { client_id: "{{client.id}}", therapist_id: "{{assignment.therapist_id}}", start_at: "{{best_slot.iso}}", status: scheduled }
+
+on: session.created
+actions:
+  - name: generate_pre_session_brief
+    call: POST /v1/sessions/{id}:brief
+    path: { id: "{{session.id}}" }
+    body: { include: [intake_summary, last_session_summary, active_goals] }
+    job: true
+  - name: schedule_reminders
+    call: POST /v1/notifications/send
+    body:
+      to: ["{{client.email}}","{{therapist.email}}"]
+      channel: email
+      template: session_reminder
+      schedule: [{ relative: "-48h" }, { relative: "-2h" }]
+
+on: session.started
+actions:
+  - name: open_live_assist
+    call: POST /v1/sessions/{id}:start
+    path: { id: "{{session.id}}" }
+    body: { live_assist: true, consent: "{{session.live_assist_consent}}" }
+
+stream_events:
+  # Subscribe to the live RT downstream to react to finalized segments
+  - source: /v1/rt/stream?session_id={{session.id}}
+    on_event: transcript.final
+    actions:
+      - name: persist_final_segment
+        call: POST /v1/sessions/{id}/notes
+        path: { id: "{{session.id}}" }
+        body: { mode: append, text: "{{event.text}}", ts_ms: "{{event.end_ms}}", segment_id: "{{event.segment_id}}", final: true }
+
+on: session.completed
+actions:
+  - name: generate_soap_summary
+    call: POST /v1/sessions/{id}:summarize
+    path: { id: "{{session.id}}" }
+    body: { format: SOAP, max_words: 250 }
+    job: true
+    save: { session.summary_job_id: "{{resp.job_id}}" }
+  - name: extract_goals
+    call: POST /v1/goals
+    body: { client_id: "{{client.id}}", session_id: "{{session.id}}", goals: "{{ai_extracted_goals_json}}" }
+  - name: create_invoice_mock
+    call: POST /v1/billing/invoices
+    body: { client_id: "{{client.id}}", session_id: "{{session.id}}", amount_cents: "{{pricing.lookup(session)}}", status: draft }
+    save: { invoice.id: "{{resp.id}}" }
+  - name: suggest_next_date_and_schedule
+    call: POST /v1/sessions
+    body: { client_id: "{{client.id}}", therapist_id: "{{session.therapist_id}}", start_at: "{{ai_or_rule_next_date.iso}}", status: scheduled }
+    emits: session.created
+  - name: notify_therapist_review
+    call: POST /v1/notifications/send
+    body: { to: "{{therapist.email}}", channel: email, template: summary_ready_for_review, data: { session_id: "{{session.id}}", invoice_id: "{{invoice.id}}" } }
+
+on: payment.succeeded
+actions:
+  - name: mark_invoice_paid
+    call: POST /v1/billing/webhooks/stripe
+    body: { event: payment_intent.succeeded, invoice_id: "{{invoice.id}}", amount_cents: "{{invoice.amount_cents}}" }
+  - name: send_receipt
+    call: POST /v1/notifications/send
+    body: { to: "{{client.email}}", channel: email, template: receipt, data: { invoice_id: "{{invoice.id}}" } }
+
+on: treatment.terminated
+actions:
+  - name: generate_discharge_summary
+    call: POST /v1/treatment/terminate
+    body: { client_id: "{{client.id}}", summary: "{{ai_discharge_summary}}", plan: "{{maintenance_plan}}" }
+  - name: schedule_maintenance_checkins
+    call: POST /v1/notifications/send
+    body:
+      to: "{{client.email}}"
+      channel: email
+      template: maintenance_checkin
+      schedule: [{ relative: "+30d" }, { relative: "+90d" }]

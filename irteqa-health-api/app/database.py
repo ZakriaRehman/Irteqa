@@ -4,16 +4,39 @@ from sqlalchemy import MetaData
 from typing import AsyncGenerator
 import os
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/hoop_health"
-)
+# Determine environment
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=True,
-    future=True
-)
+# Database URL based on environment
+if ENVIRONMENT == "production":
+    # Production: Use PostgreSQL
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL"
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/irteqa_health"
+    )
+    ENGINE_ARGS = {
+        "echo": False,  # Disable SQL logging in production
+        "future": True,
+        "pool_pre_ping": True,  # Verify connections before using
+        "pool_size": 10,
+        "max_overflow": 20
+    }
+else:
+    # Development: Use SQLite
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        "sqlite+aiosqlite:///./irteqa_health.db"
+    )
+    ENGINE_ARGS = {
+        "echo": True,  # Enable SQL logging in development
+        "future": True,
+        "connect_args": {"check_same_thread": False}  # SQLite specific
+    }
+
+print(f"[*] Environment: {ENVIRONMENT}")
+print(f"[DB] Database: {DATABASE_URL.split('@')[0] if '@' in DATABASE_URL else DATABASE_URL}")
+
+engine = create_async_engine(DATABASE_URL, **ENGINE_ARGS)
 
 AsyncSessionLocal = async_sessionmaker(
     engine,

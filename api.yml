@@ -1,9 +1,9 @@
 openapi: 3.0.3
 info:
-  title: Hoop API
+  title: irteqa API
   version: "1.0"
 servers:
-  - url: https://api.hoop.health/v1
+  - url: https://api.irteqa.health/v1
 x-guidelines:
   versioning: uri
   idempotency: header: Idempotency-Key

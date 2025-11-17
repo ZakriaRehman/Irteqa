@@ -9,6 +9,32 @@ from app.dependencies import get_tenant_id, get_idempotency_key
 
 router = APIRouter()
 
+@router.get("/clients")
+async def list_clients(
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all clients for the tenant"""
+    result = await db.execute(
+        select(Client).where(Client.tenant_id == tenant_id)
+    )
+    clients = result.scalars().all()
+
+    return {
+        "data": [
+            {
+                "id": client.id,
+                "name": client.name,
+                "email": client.email,
+                "phone": client.phone,
+                "status": client.status,
+                "concerns": client.concerns,
+                "created_at": client.created_at.isoformat() if client.created_at else None,
+            }
+            for client in clients
+        ]
+    }
+
 @router.post("/clients", status_code=status.HTTP_201_CREATED, response_model=ClientResponse)
 async def upsert_client(
     client_data: ClientCreate,

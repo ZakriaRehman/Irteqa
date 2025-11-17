@@ -1,4 +1,4 @@
-name: hoop_end_to_end
+name: irteqa_end_to_end
 version: 1.1
 defaults:
   headers: { X-Tenant-Id: "{{tenant_id}}" }

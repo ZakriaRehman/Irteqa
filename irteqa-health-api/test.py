@@ -7,7 +7,7 @@ async def test():
         conn = await asyncpg.connect(
             user='postgres',
             password='Meezan@2134',  # Use raw password in Python
-            database='hoop_health',
+            database='irteqa_health',
             host='localhost',
             port=5432
         )

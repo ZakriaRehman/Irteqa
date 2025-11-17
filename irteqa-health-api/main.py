@@ -1,13 +1,14 @@
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, status, WebSocket, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 
-from app.database import engine, Base
-from app.routers import inquiries, clients, sessions
+from app.database import engine, Base, get_db
+from app.routers import inquiries, clients, sessions, intake
 from app.routers.stub_routers import (
-    intake, consents, insurance, matching, goals,
+    consents, insurance, matching, goals,
     billing, notifications, treatment, webhooks, jobs, realtime
 )
 
@@ -60,9 +61,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(inquiries.router, prefix="/v1", tags=["inquiries"])
 app.include_router(clients.router, prefix="/v1", tags=["clients"])
 app.include_router(sessions.router, prefix="/v1", tags=["sessions"])
+app.include_router(intake.router, prefix="/v1", tags=["intake"])
 
 # Include stub routers - to be implemented
-app.include_router(intake, prefix="/v1", tags=["intake"])
 app.include_router(consents, prefix="/v1", tags=["consents"])
 app.include_router(insurance, prefix="/v1", tags=["insurance"])
 app.include_router(matching, prefix="/v1", tags=["matching"])

@@ -35,13 +35,25 @@ export default function ContactPage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        // The backend returns the inquiry with client_id
+        // We need to fetch the client to get the ID for onboarding
+        const clientResponse = await fetch(`http://localhost:8000/v1/clients`, {
+          headers: {
+            "X-Tenant-ID": "demo-tenant",
+          },
+        });
 
-        // Since we created a client in the backend, we can construct the onboarding link
-        // In a real scenario, this would be sent via email
-        const mockOnboardingLink = `/onboarding/demo`;
-        setOnboardingLink(mockOnboardingLink);
-        setSubmitted(true);
+        if (clientResponse.ok) {
+          const clientsData = await clientResponse.json();
+          // Find the client that matches the email we just submitted
+          const client = clientsData.data.find((c: any) => c.email === formData.email);
+
+          if (client) {
+            const onboardingUrl = `/onboarding/${client.id}`;
+            setOnboardingLink(onboardingUrl);
+            setSubmitted(true);
+          }
+        }
       } else {
         alert("Failed to submit form. Please try again.");
       }

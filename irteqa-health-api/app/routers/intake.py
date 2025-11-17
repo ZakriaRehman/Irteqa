@@ -334,7 +334,22 @@ async def complete_onboarding(
 
     print(f"[INTAKE] Onboarding completed for client {client_id}")
 
-    # TODO: Trigger welcome to platform email
+    # Send completion email
+    try:
+        dashboard_link = f"https://app.irteqa.com"
+        email_sent = await email_service.send_onboarding_complete_email(
+            to_email=client.email,
+            patient_name=client.name,
+            dashboard_link=dashboard_link
+        )
+
+        if email_sent:
+            print(f"[INTAKE] Completion email sent to {client.email}")
+        else:
+            print(f"[INTAKE] Failed to send completion email to {client.email}")
+    except Exception as e:
+        print(f"[INTAKE] Error sending completion email: {e}")
+
     # TODO: Send therapist assignment notification
     # TODO: Enable session scheduling
 

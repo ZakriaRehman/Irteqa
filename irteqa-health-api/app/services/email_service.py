@@ -251,6 +251,109 @@ class EmailService:
 
         return await self.send_email(to_email, subject, html_content)
 
+    async def send_onboarding_complete_email(
+        self,
+        to_email: str,
+        patient_name: str,
+        dashboard_link: str = "https://app.irteqa.com"
+    ) -> bool:
+        """Send congratulatory email when patient completes onboarding"""
+
+        subject = "Welcome Aboard! Your Irteqa Health Account is Active"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #10b981; color: white; padding: 20px; text-align: center; }}
+                .content {{ background-color: #f9fafb; padding: 30px; }}
+                .success-icon {{ font-size: 48px; text-align: center; margin: 20px 0; }}
+                .button {{ display: inline-block; background-color: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
+                .info-box {{ background-color: #dbeafe; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; }}
+                .footer {{ text-align: center; color: #6b7280; font-size: 12px; margin-top: 30px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Congratulations, {patient_name}!</h1>
+                </div>
+                <div class="content">
+                    <div class="success-icon">🎉</div>
+
+                    <p>Your onboarding is complete and your account is now active! We're excited to support you on your mental health journey.</p>
+
+                    <div class="info-box">
+                        <p><strong>What Happens Next?</strong></p>
+                        <ol>
+                            <li><strong>Therapist Matching:</strong> We're reviewing your intake form to match you with the perfect therapist. You'll hear from us within 24 hours.</li>
+                            <li><strong>First Session:</strong> Once matched, you can schedule your first session at a time that works for you.</li>
+                            <li><strong>Session Options:</strong> Choose from video, phone, or in-person sessions.</li>
+                        </ol>
+                    </div>
+
+                    <p><strong>In the meantime:</strong></p>
+                    <ul>
+                        <li>Access your dashboard to view your profile and upcoming sessions</li>
+                        <li>Explore our mental health resources and articles</li>
+                        <li>Set up your preferences for session reminders</li>
+                    </ul>
+
+                    <p style="text-align: center;">
+                        <a href="{dashboard_link}" class="button">Go to Dashboard</a>
+                    </p>
+
+                    <p>If you have any questions or need support, we're here for you:</p>
+                    <ul>
+                        <li>📧 Email: support@irteqa.com</li>
+                        <li>📞 Phone: (555) 123-4567</li>
+                        <li>💬 Live Chat: Available on our website</li>
+                    </ul>
+
+                    <p>We're honored to be part of your wellness journey.</p>
+
+                    <p>Warm regards,<br>
+                    The Irteqa Health Team</p>
+                </div>
+                <div class="footer">
+                    <p>Irteqa Health | Confidential Mental Health Services</p>
+                    <p>This email contains confidential information. If you received this in error, please delete it.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        text_content = f"""
+        Congratulations, {patient_name}!
+
+        Your onboarding is complete and your account is now active! We're excited to support you on your mental health journey.
+
+        What Happens Next?
+        1. Therapist Matching: We're reviewing your intake form to match you with the perfect therapist. You'll hear from us within 24 hours.
+        2. First Session: Once matched, you can schedule your first session at a time that works for you.
+        3. Session Options: Choose from video, phone, or in-person sessions.
+
+        In the meantime:
+        - Access your dashboard at {dashboard_link}
+        - Explore our mental health resources
+        - Set up your preferences for session reminders
+
+        If you have any questions or need support:
+        - Email: support@irteqa.com
+        - Phone: (555) 123-4567
+
+        We're honored to be part of your wellness journey.
+
+        Warm regards,
+        The Irteqa Health Team
+        """
+
+        return await self.send_email(to_email, subject, html_content, text_content)
+
 
 # Singleton instance
 email_service = EmailService()

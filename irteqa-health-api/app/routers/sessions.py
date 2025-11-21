@@ -251,6 +251,49 @@ async def get_session(
     return session_dict
 
 
+@router.get("/sessions/{id}/transcript")
+async def get_session_transcript(
+    id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get session transcript in formatted structure"""
+
+    result = await db.execute(
+        select(Session).where(
+            Session.id == id,
+            Session.tenant_id == tenant_id
+        )
+    )
+    session = result.scalar_one_or_none()
+
+    if not session:
+        return {"error": {"code": "not_found", "message": "Session not found"}}
+
+    # Parse transcript into segments
+    transcript_text = session.transcript or ""
+    segments = []
+
+    if transcript_text:
+        lines = transcript_text.strip().split('\n')
+        for idx, line in enumerate(lines):
+            if line.strip():
+                segments.append({
+                    "index": idx + 1,
+                    "text": line.strip(),
+                    "timestamp": None  # TODO: Add timestamp tracking
+                })
+
+    return {
+        "session_id": id,
+        "transcript": transcript_text,
+        "segments": segments,
+        "total_segments": len(segments),
+        "has_transcript": bool(transcript_text),
+        "status": session.status
+    }
+
+
 @router.post("/sessions/{id}:summarize", status_code=status.HTTP_202_ACCEPTED)
 async def summarize_session(
     id: str,
@@ -259,7 +302,7 @@ async def summarize_session(
     db: AsyncSession = Depends(get_db)
 ):
     """Generate SOAP summary (AI) → Job"""
-    
+
     # Verify session exists and has transcript
     result = await db.execute(
         select(Session).where(
@@ -268,13 +311,13 @@ async def summarize_session(
         )
     )
     session = result.scalar_one_or_none()
-    
+
     if not session:
         return {"error": {"code": "not_found", "message": "Session not found"}}
-    
+
     if not session.transcript:
         return {"error": {"code": "no_transcript", "message": "No transcript available"}}
-    
+
     # Create job for SOAP generation
     job = Job(
         tenant_id=tenant_id,
@@ -287,11 +330,11 @@ async def summarize_session(
             "transcript_length": len(session.transcript)
         }
     )
-    
+
     db.add(job)
     await db.commit()
     await db.refresh(job)
-    
+
     # TODO: Queue actual AI processing task
     # For now, mock SOAP generation
     session.soap_summary = {
@@ -301,7 +344,7 @@ async def summarize_session(
         "plan": "Continue weekly sessions, practice relaxation techniques."
     }
     await db.commit()
-    
+
     return JobResponse(
         job_id=job.id,
         status=job.status,
